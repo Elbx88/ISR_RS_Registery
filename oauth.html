@@ -1,100 +1,56 @@
 <!DOCTYPE html>
-<html lang="he" dir="rtl">
+<html lang="en">
 <head>
   <meta charset="UTF-8">
-  <title>ISR RS Register - Google Drive Integrated</title>
-  <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
-  <script src="https://apis.google.com/js/api.js"></script>
+  <title>OAuth Redirect Handler</title>
   <style>
-    body {
-      font-family: Arial;
-      padding: 20px;
-      background: #f7f7f7;
-      color: #000;
-    }
-    body.dark {
-      background: #121212;
-      color: #f0f0f0;
-    }
-    body[lang="en"] {
-      direction: ltr;
-      text-align: left;
-    }
-    body[lang="he"] {
-      direction: rtl;
-      text-align: right;
-    }
-    table {
-      border-collapse: collapse;
-      width: 100%;
-      background: inherit;
-    }
-    th, td {
-      border: 1px solid #aaa;
-      padding: 8px;
-    }
-    th {
-      background-color: #e0e0e0;
-    }
-    tr.overdue {
-      background-color: #ffe0e0;
-    }
-    #dropZone {
-      border: 2px dashed #888;
-      padding: 20px;
-      margin-bottom: 20px;
-      text-align: center;
-      cursor: pointer;
-      background-color: #fafafa;
-    }
-    select, input[type="text"] {
-      padding: 6px;
-      margin-left: 10px;
-    }
-    #toolbar {
-      margin-bottom: 20px;
-    }
-    #tokenStatus {
-      font-size: 0.9em;
-      color: green;
-      margin-right: 10px;
-    }
-    #authActions button {
-      margin-left: 10px;
-    }
-    .toast {
-      position: fixed;
-      bottom: 20px;
-      right: 20px;
-      background: #333;
-      color: white;
-      padding: 10px 20px;
-      border-radius: 8px;
-      opacity: 0.95;
-      font-size: 14px;
-      z-index: 9999;
-      animation: fadeOut 4s forwards;
-    }
-    @keyframes fadeOut {
-      0% { opacity: 1; }
-      90% { opacity: 0.9; }
-      100% { opacity: 0; display: none; }
-    }
+    body { font-family: sans-serif; background: #f0f0f0; text-align: center; padding: 3em; }
+    .loading { font-size: 1.4em; color: #333; }
   </style>
 </head>
-<body lang="he">
+<body>
+  <div class="loading">⏳ מבצע אימות עם Google...</div>
+  <script>
+    (async function handleOAuthRedirect() {
+      const urlParams = new URLSearchParams(window.location.search);
+      const code = urlParams.get('code');
+      const state = urlParams.get('state');
 
-<!-- toast container -->
-<div id="toastContainer"></div>
+      if (!code) {
+        document.body.innerHTML = '<h2 style="color:red">❌ שגיאה: לא התקבל קוד OAuth</h2>';
+        return;
+      }
 
-<script>
-function showToast(msg) {
-  const div = document.createElement("div");
-  div.className = "toast";
-  div.innerText = msg;
-  document.getElementById("toastContainer").appendChild(div);
-  setTimeout(() => div.remove(), 5000);
-}
-</script>
+      try {
+        const clientId = '612690526030-446iu6qti4b2vc0v0q64k9sjfi4974b3.apps.googleusercontent.com';
+        const clientSecret = 'YOUR_CLIENT_SECRET'; // יש להחליף!
+        const redirectUri = 'https://elbx88.github.io/isr-oauth/oauth.html';
 
-<!-- rest of HTML body remains unchanged -->
+        const response = await fetch('https://oauth2.googleapis.com/token', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+          body: new URLSearchParams({
+            code,
+            client_id: clientId,
+            client_secret: clientSecret,
+            redirect_uri: redirectUri,
+            grant_type: 'authorization_code'
+          })
+        });
+
+        const tokenData = await response.json();
+
+        if (tokenData.error) throw new Error(tokenData.error_description);
+
+        localStorage.setItem('oauth_token', tokenData.access_token);
+        localStorage.setItem('oauth_expiry', (Date.now() + (tokenData.expires_in * 1000)).toString());
+        if (tokenData.refresh_token) localStorage.setItem('oauth_refresh', tokenData.refresh_token);
+
+        window.location.href = '../index.html';
+      } catch (err) {
+        document.body.innerHTML = `<h2 style="color:red">⚠️ שגיאה בעת קבלת טוקן: ${err.message}</h2>`;
+      }
+    })();
+  </script>
+</body>
+</html>
