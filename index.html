@@ -1,0 +1,136 @@
+<!DOCTYPE html>
+<html lang="he" dir="rtl">
+<head>
+  <meta charset="UTF-8">
+  <title>ISR RS Register</title>
+  <script src="https://apis.google.com/js/api.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+  <style>
+    body { font-family: Arial; background: #f7f7f7; color: #111; padding: 2em; }
+    button, select { padding: 10px 20px; margin: 5px; }
+    #status { margin-top: 1em; font-weight: bold; }
+    #fileList, #sheetSelector { margin-top: 1em; }
+    table { border-collapse: collapse; width: 100%; margin-top: 1em; background: #fff; }
+    th, td { border: 1px solid #ccc; padding: 8px; text-align: right; }
+    th { background: #eee; }
+  </style>
+</head>
+<body>
+  <h2>🔐 ISR RS Register</h2>
+  <button onclick="loginToGoogle()">התחבר ל־Google</button>
+  <button onclick="logoutGoogle()">🚪 התנתק</button>
+  <div id="status">🟡 טרם התחברת.</div>
+  <div id="fileList"></div>
+  <div id="sheetSelector"></div>
+  <div id="sheetContent"></div>
+
+  <script>
+    let workbookGlobal = null;
+
+    const token = localStorage.getItem('oauth_token');
+    const expiry = parseInt(localStorage.getItem('oauth_expiry') || '0');
+
+    function updateStatus(msg) {
+      document.getElementById('status').innerText = msg;
+    }
+
+    function isTokenValid() {
+      return token && Date.now() < expiry;
+    }
+
+    function loginToGoogle() {
+      const clientId = '612690526030-446iu6qti4b2vc0v0q64k9sjfi4974b3.apps.googleusercontent.com';
+      const redirectUri = 'https://elbx88.github.io/isr-oauth/oauth.html';
+      const scope = 'https://www.googleapis.com/auth/drive.file';
+      const authUrl = `https://accounts.google.com/o/oauth2/v2/auth?client_id=${clientId}&redirect_uri=${redirectUri}&response_type=token&scope=${scope}&access_type=offline&prompt=consent`;
+      window.location.href = authUrl;
+    }
+
+    function logoutGoogle() {
+      localStorage.removeItem("oauth_token");
+      localStorage.removeItem("oauth_expiry");
+      updateStatus("🔓 התנתקת בהצלחה.");
+      document.getElementById('fileList').innerHTML = '';
+      document.getElementById('sheetSelector').innerHTML = '';
+      document.getElementById('sheetContent').innerHTML = '';
+    }
+
+    function listDriveFiles() {
+      gapi.client.setToken({ access_token: token });
+      gapi.client.load('drive', 'v3', () => {
+        gapi.client.drive.files.list({
+          pageSize: 10,
+          fields: "files(id, name, mimeType)"
+        }).then(res => {
+          const files = res.result.files;
+          if (!files || files.length === 0) {
+            document.getElementById('fileList').innerText = 'לא נמצאו קבצים.';
+            return;
+          }
+          let html = '<h3>📂 קבצים אחרונים בדרייב:</h3><ul>';
+          for (const file of files) {
+            if (file.mimeType.includes("spreadsheet") || file.name.endsWith(".xlsx")) {
+              html += `<li><button onclick="loadXLSX('${file.id}')">📄 ${file.name}</button></li>`;
+            }
+          }
+          html += '</ul>';
+          document.getElementById('fileList').innerHTML = html;
+        });
+      });
+    }
+
+    function loadXLSX(fileId) {
+      const xhr = new XMLHttpRequest();
+      xhr.open("GET", `https://www.googleapis.com/drive/v3/files/${fileId}?alt=media`, true);
+      xhr.setRequestHeader("Authorization", `Bearer ${token}`);
+      xhr.responseType = "arraybuffer";
+      xhr.onload = function() {
+        const data = new Uint8Array(xhr.response);
+        workbookGlobal = XLSX.read(data, { type: "array" });
+        populateSheetDropdown();
+      };
+      xhr.send();
+    }
+
+    function populateSheetDropdown() {
+      const sheetNames = workbookGlobal.SheetNames;
+      let html = '<label for="sheetSelect">בחר גיליון:</label> <select id="sheetSelect" onchange="displaySelectedSheet()">';
+      sheetNames.forEach((name, i) => {
+        html += `<option value="${name}">${name}</option>`;
+      });
+      html += '</select>';
+      document.getElementById('sheetSelector').innerHTML = html;
+      displaySelectedSheet();
+    }
+
+    function displaySelectedSheet() {
+      const sheetName = document.getElementById('sheetSelect').value;
+      const rows = XLSX.utils.sheet_to_json(workbookGlobal.Sheets[sheetName], { header: 1 });
+      let table = '<table><thead><tr>';
+      rows[0].forEach(cell => table += `<th>${cell}</th>`);
+      table += '</tr></thead><tbody>';
+      rows.slice(1).forEach(row => {
+        table += '<tr>';
+        row.forEach(cell => table += `<td>${cell ?? ''}</td>`);
+        table += '</tr>';
+      });
+      table += '</tbody></table>';
+      document.getElementById('sheetContent').innerHTML = table;
+    }
+
+    function initGapiAndLoadFiles() {
+      gapi.load('client', async () => {
+        await gapi.client.init({});
+        listDriveFiles();
+      });
+    }
+
+    if (isTokenValid()) {
+      updateStatus("✅ מחובר ל־Google Drive");
+      initGapiAndLoadFiles();
+    } else {
+      updateStatus("🔒 לא מחובר. התחבר כדי לגשת לקבצים.");
+    }
+  </script>
+</body>
+</html>
