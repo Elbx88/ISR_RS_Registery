@@ -1,0 +1,110 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>ISR RS Dashboard</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <style>
+    body.dark { background: #121212; color: #eee; }
+    body.light { background: #fff; color: #000; }
+    .toast {
+      position: fixed; bottom: 20px; right: 20px;
+      background: #323232; color: white; padding: 10px 20px;
+      border-radius: 8px; font-size: 14px; z-index: 9999;
+    }
+    #sheetSelect { margin: 1em; padding: 0.5em; }
+  </style>
+</head>
+<body class="light">
+  <h2>📊 ISR RS Register Dashboard</h2>
+  <button onclick="toggleDarkMode()">🌓 מצב כהה</button>
+  <button onclick="signOut()">🚪 התנתק</button>
+  <input type="file" id="fileInput" multiple />
+  <select id="sheetSelect" onchange="renderSelectedSheet()"></select>
+  <div id="tableContainer"></div>
+
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+  <script>
+    const tokenKey = 'oauth_token';
+
+    async function refreshAccessToken(showToast = true) {
+      const refreshToken = localStorage.getItem('oauth_refresh');
+      if (!refreshToken) return;
+      try {
+        const r = await fetch('https://oauth2.googleapis.com/token', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+          body: new URLSearchParams({
+            client_id: '612690526030-446iu6qti4b2vc0v0q64k9sjfi4974b3.apps.googleusercontent.com',
+            client_secret: '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',
+            refresh_token: refreshToken,
+            grant_type: 'refresh_token'
+          })
+        });
+        const token = await r.json();
+        if (token.access_token) {
+          localStorage.setItem(tokenKey, token.access_token);
+          localStorage.setItem('oauth_expiry', (Date.now() + token.expires_in * 1000).toString());
+          if (showToast) showToast("🔄 הטוקן חודש");
+        }
+      } catch (e) { showToast("❌ כשל ברענון"); }
+    }
+
+    function toggleDarkMode() {
+      const body = document.body;
+      body.className = body.className === 'dark' ? 'light' : 'dark';
+    }
+
+    function signOut() {
+      localStorage.removeItem(tokenKey);
+      localStorage.removeItem('oauth_refresh');
+      showToast("🚪 נותקת מהחשבון");
+    }
+
+    function showToast(msg, t = 3000) {
+      const div = document.createElement('div');
+      div.className = 'toast';
+      div.textContent = msg;
+      document.body.appendChild(div);
+      setTimeout(() => div.remove(), t);
+    }
+
+    // File handling
+    document.getElementById('fileInput').addEventListener('change', async (e) => {
+      const file = e.target.files[0];
+      if (!file) return;
+      const data = await file.arrayBuffer();
+      const workbook = XLSX.read(data);
+      localStorage.setItem('lastFile', data);
+      loadSheets(workbook);
+    });
+
+    function loadSheets(workbook) {
+      const sheetSelect = document.getElementById('sheetSelect');
+      sheetSelect.innerHTML = '';
+      workbook.SheetNames.forEach(name => {
+        const option = document.createElement('option');
+        option.value = name;
+        option.textContent = name;
+        sheetSelect.appendChild(option);
+      });
+      window._activeWorkbook = workbook;
+      renderSelectedSheet();
+    }
+
+    function renderSelectedSheet() {
+      const name = document.getElementById('sheetSelect').value;
+      const ws = window._activeWorkbook?.Sheets?.[name];
+      if (!ws) return;
+      const html = XLSX.utils.sheet_to_html(ws);
+      document.getElementById('tableContainer').innerHTML = html;
+    }
+
+    // Try refresh on load
+    const expiry = parseInt(localStorage.getItem('oauth_expiry') || '0');
+    if (Date.now() > expiry && localStorage.getItem('oauth_refresh')) {
+      refreshAccessToken();
+    }
+  </script>
+</body>
+</html>
