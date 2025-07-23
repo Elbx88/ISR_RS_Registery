@@ -36,22 +36,15 @@
   <script>
     let workbookGlobal = null;
 
-    const token = localStorage.getItem('oauth_token');
-    const expiry = parseInt(localStorage.getItem('oauth_expiry') || '0');
-
     function updateStatus(msg) {
       document.getElementById('status').innerText = msg;
-    }
-
-    function isTokenValid() {
-      return token && Date.now() < expiry;
     }
 
     function loginToGoogle() {
       const clientId = '612690526030-446iu6qti4b2vc0v0q64k9sjfi4974b3.apps.googleusercontent.com';
       const redirectUri = 'https://elbx88.github.io/isr-oauth/oauth.html';
       const scope = 'https://www.googleapis.com/auth/drive.file';
-      const authUrl = `https://accounts.google.com/o/oauth2/v2/auth?client_id=${clientId}&redirect_uri=${redirectUri}&response_type=token&scope=${scope}&access_type=offline&prompt=consent`;
+      const authUrl = `https://accounts.google.com/o/oauth2/v2/auth?client_id=${clientId}&redirect_uri=${redirectUri}&response_type=code&scope=${scope}&access_type=offline&prompt=consent`;
       window.location.href = authUrl;
     }
 
@@ -64,7 +57,14 @@
       document.getElementById('sheetContent').innerHTML = '';
     }
 
+    function isTokenValid() {
+      const token = localStorage.getItem('oauth_token');
+      const expiry = parseInt(localStorage.getItem('oauth_expiry') || '0');
+      return token && Date.now() < expiry;
+    }
+
     function listDriveFiles() {
+      const token = localStorage.getItem('oauth_token');
       gapi.client.setToken({ access_token: token });
       gapi.client.load('drive', 'v3', () => {
         gapi.client.drive.files.list({
@@ -89,6 +89,7 @@
     }
 
     function loadXLSX(fileId) {
+      const token = localStorage.getItem('oauth_token');
       const xhr = new XMLHttpRequest();
       xhr.open("GET", `https://www.googleapis.com/drive/v3/files/${fileId}?alt=media`, true);
       xhr.setRequestHeader("Authorization", `Bearer ${token}`);
@@ -104,7 +105,7 @@
     function populateSheetDropdown() {
       const sheetNames = workbookGlobal.SheetNames;
       let html = '<label for="sheetSelect">בחר גיליון:</label> <select id="sheetSelect" onchange="displaySelectedSheet()">';
-      sheetNames.forEach((name, i) => {
+      sheetNames.forEach(name => {
         html += `<option value="${name}">${name}</option>`;
       });
       html += '</select>';
@@ -130,7 +131,7 @@
     function initGapiAndLoadFiles() {
       gapi.load('client', async () => {
         await gapi.client.init({});
-        listDriveFiles();
+        if (isTokenValid()) listDriveFiles();
       });
     }
 
@@ -143,13 +144,10 @@
 
     function runTests() {
       const results = [];
-      const now = Date.now();
       const isValid = isTokenValid();
-
       results.push({ test: "טוקן קיים ומעודכן", result: isValid });
       results.push({ test: "gapi טעון כראוי", result: typeof gapi !== 'undefined' });
       results.push({ test: "UI בסיסי קיים", result: document.getElementById('status') && document.getElementById('fileList') });
-
       const ul = document.getElementById('testResults');
       ul.innerHTML = '';
       results.forEach(t => {
@@ -163,5 +161,4 @@
 </body>
 </html>
 
-    
   
