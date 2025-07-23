@@ -1,0 +1,234 @@
+<!DOCTYPE html>
+<html lang="he" dir="rtl">
+<head>
+  <meta charset="UTF-8">
+  <title>ISR RS Register - Google Drive Integrated</title>
+  <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+  <script src="https://apis.google.com/js/api.js"></script>
+  <script src="https://accounts.google.com/gsi/client" async defer></script>
+  <style>
+    body {
+      font-family: Arial;
+      padding: 20px;
+      background: #f7f7f7;
+      color: #000;
+    }
+    body.dark {
+      background: #121212;
+      color: #f0f0f0;
+    }
+    body[lang="en"] {
+      direction: ltr;
+      text-align: left;
+    }
+    body[lang="he"] {
+      direction: rtl;
+      text-align: right;
+    }
+    table {
+      border-collapse: collapse;
+      width: 100%;
+      background: inherit;
+    }
+    th, td {
+      border: 1px solid #aaa;
+      padding: 8px;
+    }
+    th {
+      background-color: #e0e0e0;
+    }
+    tr.overdue {
+      background-color: #ffe0e0;
+    }
+    #dropZone {
+      border: 2px dashed #888;
+      padding: 20px;
+      margin-bottom: 20px;
+      text-align: center;
+      cursor: pointer;
+      background-color: #fafafa;
+    }
+    select, input[type="text"] {
+      padding: 6px;
+      margin-left: 10px;
+    }
+    #toolbar {
+      margin-bottom: 20px;
+    }
+  </style>
+</head>
+<body lang="he">
+
+<div id="toolbar">
+  <button onclick="toggleLang()">שנה שפה</button>
+  <button onclick="toggleDarkMode()">שנה מצב כהה</button>
+  <input type="text" id="searchBox" placeholder="סנן..." oninput="renderTable()">
+  <button onclick="exportTable()">📤 ייצוא טבלה</button>
+  <button onclick="handleDriveLoad()">🔓 טען מ-Google Drive</button>
+  <button onclick="handleDriveSave()">🔐 שמור ל-Google Drive</button>
+</div>
+
+<div id="dropZone">📂 Drop or Click to Upload XLSX/CSV File</div>
+<input type="file" id="fileInput" accept=".csv,.xlsx,.xls" style="display:none">
+<div>
+  <label for="sheetSelect">גיליון גליון:</label>
+  <select id="sheetSelect"></select>
+</div>
+<table id="rsTable">
+  <thead></thead>
+  <tbody></tbody>
+</table>
+
+<script>
+const CLIENT_ID = "612690526030-ja9gbr0l1nvs3ogkg69nt9hr1sbi0m0e.apps.googleusercontent.com";
+const SCOPES = "https://www.googleapis.com/auth/drive.file";
+let tokenClient;
+let accessToken = null;
+
+function gapiInit() {
+  gapi.load("client", async () => {
+    await gapi.client.init({});
+    tokenClient = google.accounts.oauth2.initTokenClient({
+      client_id: CLIENT_ID,
+      scope: SCOPES,
+      callback: (token) => {
+        accessToken = token.access_token;
+      },
+    });
+  });
+}
+
+function handleDriveLoad() {
+  tokenClient.requestAccessToken();
+  setTimeout(async () => {
+    const response = await gapi.client.drive.files.list({
+      pageSize: 1,
+      q: "mimeType='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'",
+      fields: "files(id,name)"
+    });
+    const file = response.result.files[0];
+    const fileId = file.id;
+    const res = await gapi.client.drive.files.get({ fileId, alt: 'media' });
+    const blob = new Blob([res.body], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      workbook = XLSX.read(e.target.result, { type: 'binary' });
+      populateSheetList(workbook);
+    };
+    reader.readAsBinaryString(blob);
+  }, 1000);
+}
+
+function handleDriveSave() {
+  const headers = [...document.querySelectorAll("#rsTable thead th")].map(th => th.textContent);
+  const rows = [...document.querySelectorAll("#rsTable tbody tr")].map(tr =>
+    [...tr.querySelectorAll("td")].reduce((obj, td, idx) => {
+      obj[headers[idx]] = td.textContent;
+      return obj;
+    }, {})
+  );
+  const worksheet = XLSX.utils.json_to_sheet(rows);
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, worksheet, "Export");
+  const blob = XLSX.write(wb, { bookType: 'xlsx', type: 'blob' });
+
+  const metadata = { name: 'register_export.xlsx', mimeType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' };
+  const form = new FormData();
+  form.append('metadata', new Blob([JSON.stringify(metadata)], { type: 'application/json' }));
+  form.append('file', blob);
+
+  fetch('https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&fields=id', {
+    method: 'POST',
+    headers: new Headers({ 'Authorization': 'Bearer ' + accessToken }),
+    body: form
+  }).then(r => r.json()).then(console.log);
+}
+
+document.getElementById("dropZone").addEventListener("dragover", e => e.preventDefault());
+document.getElementById("dropZone").addEventListener("drop", e => {
+  e.preventDefault();
+  handleFile(e.dataTransfer.files[0]);
+});
+document.getElementById("dropZone").addEventListener("click", () => document.getElementById("fileInput").click());
+document.getElementById("fileInput").addEventListener("change", e => handleFile(e.target.files[0]));
+document.getElementById("sheetSelect").addEventListener("change", () => loadSheet(document.getElementById("sheetSelect").value));
+
+function toggleLang() {
+  const lang = document.body.lang === "he" ? "en" : "he";
+  document.body.lang = lang;
+  localStorage.setItem("lang", lang);
+}
+function toggleDarkMode() {
+  document.body.classList.toggle("dark");
+  localStorage.setItem("darkMode", document.body.classList.contains("dark"));
+}
+
+let workbook, data = [];
+function handleFile(file) {
+  const reader = new FileReader();
+  reader.onload = function (e) {
+    const ext = file.name.split('.').pop().toLowerCase();
+    if (ext === 'csv') {
+      data = parseCSV(e.target.result);
+      renderTable();
+    } else {
+      workbook = XLSX.read(e.target.result, { type: 'binary' });
+      populateSheetList(workbook);
+    }
+  };
+  if (file.name.endsWith(".csv")) reader.readAsText(file);
+  else reader.readAsBinaryString(file);
+}
+function populateSheetList(wb) {
+  const sheetSelect = document.getElementById("sheetSelect");
+  sheetSelect.innerHTML = "";
+  wb.SheetNames.forEach(name => {
+    const opt = document.createElement("option");
+    opt.value = name;
+    opt.textContent = name;
+    sheetSelect.appendChild(opt);
+  });
+  loadSheet(wb.SheetNames[0]);
+}
+function loadSheet(name) {
+  const sheet = workbook.Sheets[name];
+  data = XLSX.utils.sheet_to_json(sheet, { defval: "" });
+  renderTable();
+}
+function renderTable() {
+  const table = document.getElementById("rsTable");
+  if (!data.length) return;
+  const search = document.getElementById("searchBox").value.toLowerCase();
+  const headers = Object.keys(data[0]);
+  table.querySelector("thead").innerHTML = "<tr>" + headers.map(h => `<th>${h}</th>`).join("") + "</tr>";
+  const tbody = table.querySelector("tbody");
+  tbody.innerHTML = "";
+  data.forEach(row => {
+    if (Object.values(row).some(val => String(val).toLowerCase().includes(search))) {
+      const tr = document.createElement("tr");
+      tr.innerHTML = headers.map(h => `<td>${row[h]}</td>`).join("");
+      tbody.appendChild(tr);
+    }
+  });
+}
+function parseCSV(csv) {
+  const [headerLine, ...lines] = csv.split('\n').map(l => l.trim()).filter(l => l);
+  const headers = headerLine.split(',').map(h => h.trim());
+  return lines.map(line => {
+    const row = {};
+    line.split(',').forEach((val, idx) => row[headers[idx]] = val.trim());
+    return row;
+  });
+}
+window.onload = function() {
+  gapiInit();
+  const saved = localStorage.getItem("lastFileData");
+  if (saved) {
+    const binary = atob(saved);
+    workbook = XLSX.read(binary, { type: 'binary' });
+    populateSheetList(workbook);
+  }
+};
+</script>
+</body>
+</html>
