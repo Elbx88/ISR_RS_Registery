@@ -13,6 +13,9 @@
     table { border-collapse: collapse; width: 100%; margin-top: 1em; background: #fff; }
     th, td { border: 1px solid #ccc; padding: 8px; text-align: right; }
     th { background: #eee; }
+    #testSuite { margin-top: 2em; background: #f0f0f0; padding: 1em; border-radius: 5px; }
+    .test-result.pass { color: green; }
+    .test-result.fail { color: red; }
   </style>
 </head>
 <body>
@@ -23,6 +26,12 @@
   <div id="fileList"></div>
   <div id="sheetSelector"></div>
   <div id="sheetContent"></div>
+
+  <div id="testSuite">
+    <h3>🧪 בדיקות מערכת</h3>
+    <button onclick="runTests()">הרץ בדיקות</button>
+    <ul id="testResults"></ul>
+  </div>
 
   <script>
     let workbookGlobal = null;
@@ -131,6 +140,28 @@
     } else {
       updateStatus("🔒 לא מחובר. התחבר כדי לגשת לקבצים.");
     }
+
+    function runTests() {
+      const results = [];
+      const now = Date.now();
+      const isValid = isTokenValid();
+
+      results.push({ test: "טוקן קיים ומעודכן", result: isValid });
+      results.push({ test: "gapi טעון כראוי", result: typeof gapi !== 'undefined' });
+      results.push({ test: "UI בסיסי קיים", result: document.getElementById('status') && document.getElementById('fileList') });
+
+      const ul = document.getElementById('testResults');
+      ul.innerHTML = '';
+      results.forEach(t => {
+        const li = document.createElement('li');
+        li.textContent = `${t.test}: ${t.result ? '✅' : '❌'}`;
+        li.className = 'test-result ' + (t.result ? 'pass' : 'fail');
+        ul.appendChild(li);
+      });
+    }
   </script>
 </body>
 </html>
+
+    
+  
