@@ -11,7 +11,7 @@
 <body>
   <div class="loading">⏳ מבצע אימות עם Google...</div>
   <script>
-    (async function handleOAuthRedirect() {
+    async function handleOAuthRedirect() {
       const urlParams = new URLSearchParams(window.location.search);
       const code = urlParams.get('code');
       const state = urlParams.get('state');
@@ -23,7 +23,7 @@
 
       try {
         const clientId = '612690526030-446iu6qti4b2vc0v0q64k9sjfi4974b3.apps.googleusercontent.com';
-        const clientSecret = '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'; // יש להחליף!
+        const clientSecret = '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'; // יש להחליף בסביבה מאובטחת בלבד
         const redirectUri = 'https://elbx88.github.io/isr-oauth/oauth.html';
 
         const response = await fetch('https://oauth2.googleapis.com/token', {
@@ -42,16 +42,61 @@
 
         if (tokenData.error) throw new Error(tokenData.error_description);
 
+        // Save token details
+        const expiryTime = Date.now() + (tokenData.expires_in * 1000);
         localStorage.setItem('oauth_token', tokenData.access_token);
-        localStorage.setItem('oauth_expiry', (Date.now() + (tokenData.expires_in * 1000)).toString());
-        if (tokenData.refresh_token) localStorage.setItem('oauth_refresh', tokenData.refresh_token);
+        localStorage.setItem('oauth_expiry', expiryTime.toString());
+        if (tokenData.refresh_token) {
+          localStorage.setItem('oauth_refresh', tokenData.refresh_token);
+        }
 
+        // Save Google user account (optional future use)
+        localStorage.setItem('oauth_account_status', 'connected');
+
+        // Redirect
         window.location.href = '../index.html';
+
       } catch (err) {
         document.body.innerHTML = `<h2 style="color:red">⚠️ שגיאה בעת קבלת טוקן: ${err.message}</h2>`;
       }
-    })();
+    }
+
+    // Token refresh logic (optional hook)
+    async function refreshAccessToken() {
+      const refreshToken = localStorage.getItem('oauth_refresh');
+      if (!refreshToken) return;
+
+      const clientId = '612690526030-446iu6qti4b2vc0v0q64k9sjfi4974b3.apps.googleusercontent.com';
+      const clientSecret = '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';
+      const response = await fetch('https://oauth2.googleapis.com/token', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: new URLSearchParams({
+          client_id: clientId,
+          client_secret: clientSecret,
+          refresh_token: refreshToken,
+          grant_type: 'refresh_token'
+        })
+      });
+
+      const newToken = await response.json();
+      if (newToken.access_token) {
+        localStorage.setItem('oauth_token', newToken.access_token);
+        localStorage.setItem('oauth_expiry', (Date.now() + (newToken.expires_in * 1000)).toString());
+        console.log('🔄 טוקן חודש בהצלחה');
+      }
+    }
+
+    // Auto-check before redirect if needed (optional)
+    const expiry = parseInt(localStorage.getItem('oauth_expiry') || '0');
+    if (Date.now() > expiry && localStorage.getItem('oauth_refresh')) {
+      refreshAccessToken();
+    }
+
+    handleOAuthRedirect();
   </script>
 </body>
 </html>
+
+ 
 
