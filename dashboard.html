@@ -4,6 +4,7 @@
   <meta charset="UTF-8" />
   <title>ISR RS Dashboard</title>
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <script src="https://apis.google.com/js/api.js"></script>
   <style>
     body.dark { background: #121212; color: #eee; }
     body.light { background: #fff; color: #000; }
@@ -19,6 +20,7 @@
   <h2>📊 ISR RS Register Dashboard</h2>
   <button onclick="toggleDarkMode()">🌓 מצב כהה</button>
   <button onclick="signOut()">🚪 התנתק</button>
+  <button onclick="loadFromDrive()">📂 טען מ-Google Drive</button>
   <input type="file" id="fileInput" multiple />
   <select id="sheetSelect" onchange="renderSelectedSheet()"></select>
   <div id="tableContainer"></div>
@@ -69,7 +71,7 @@
       setTimeout(() => div.remove(), t);
     }
 
-    // File handling
+    // File input handler
     document.getElementById('fileInput').addEventListener('change', async (e) => {
       const file = e.target.files[0];
       if (!file) return;
@@ -100,7 +102,43 @@
       document.getElementById('tableContainer').innerHTML = html;
     }
 
-    // Try refresh on load
+    // Google Drive API Integration
+    function loadFromDrive() {
+      const token = localStorage.getItem(tokenKey);
+      if (!token) return showToast("🔐 אין טוקן זמין");
+
+      gapi.load('client', async () => {
+        await gapi.client.init({
+          apiKey: '',
+          discoveryDocs: ["https://www.googleapis.com/discovery/v1/apis/drive/v3/rest"],
+        });
+        gapi.client.setToken({ access_token: token });
+
+        const res = await gapi.client.drive.files.list({
+          q: "mimeType='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'",
+          pageSize: 10,
+          fields: "files(id, name)"
+        });
+
+        const file = res.result.files?.[0];
+        if (!file) return showToast("📄 לא נמצאו קבצים ב-Drive");
+
+        const dl = await gapi.client.drive.files.get({
+          fileId: file.id,
+          alt: 'media'
+        });
+
+        const b64 = dl.body;
+        const binary = atob(b64);
+        const len = binary.length;
+        const buf = new Uint8Array(len);
+        for (let i = 0; i < len; i++) buf[i] = binary.charCodeAt(i);
+        const workbook = XLSX.read(buf.buffer);
+        loadSheets(workbook);
+        showToast("✅ נטען מ-Google Drive: " + file.name);
+      });
+    }
+
     const expiry = parseInt(localStorage.getItem('oauth_expiry') || '0');
     if (Date.now() > expiry && localStorage.getItem('oauth_refresh')) {
       refreshAccessToken();
